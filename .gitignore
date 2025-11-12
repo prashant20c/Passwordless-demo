@@ -1,0 +1,10 @@
+/node_modules
+/frontend/node_modules
+/mock-api/node_modules
+/backend-php/vendor
+/backend-php/.env
+/frontend/.env
+.env
+/device-gui/.venv
+/device-gui/__pycache__
+*.log
