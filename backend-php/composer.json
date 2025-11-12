@@ -1,0 +1,12 @@
+{
+  "name": "passwordless/demo-api",
+  "type": "project",
+  "require": {
+    "firebase/php-jwt": "^6.9"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  }
+}

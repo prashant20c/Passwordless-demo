@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply font-display bg-slate-950;
+}
+
+a {
+  @apply text-amber-300 hover:text-amber-200 transition-colors;
+}
+
+button {
+  @apply transition-transform duration-150;
+}
+
+button:active {
+  transform: translateY(1px);
+}
