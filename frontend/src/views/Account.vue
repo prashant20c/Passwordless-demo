@@ -7,7 +7,7 @@
       </div>
       <p v-if="error" class="text-sm text-rose-300">{{ error }}</p>
       <div v-if="loading" class="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 text-sm text-slate-300">
-        Loading your boutique profile…
+        Loading your  profile…
       </div>
       <div v-else class="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 space-y-3">
         <h3 class="text-lg font-semibold text-amber-200">Account details</h3>

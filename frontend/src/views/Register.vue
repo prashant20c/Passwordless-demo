@@ -2,9 +2,9 @@
   <BrandCard>
     <div class="px-8 py-10 space-y-8">
       <div class="space-y-2 text-slate-200">
-        <h2 class="text-3xl font-semibold">Create your Lyra Lane account</h2>
+        <h2 class="text-3xl font-semibold">Create your  account</h2>
         <p class="text-sm text-slate-400">
-          Join the boutique and unlock seamless, password-less shopping vibes.
+          Join the service and unlock seamless, password-less vibes.
         </p>
       </div>
       <form class="space-y-5" @submit.prevent="submit">

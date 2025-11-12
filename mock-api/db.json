@@ -1,5 +1,90 @@
 {
-  "users": [],
-  "devices": [],
-  "logins": []
+  "users": [
+    {
+      "full_name": "dfgdfg",
+      "email": "abc@gmail.com",
+      "password_hash": "$2y$10$J0.Y0IVct.IeRzjlt1mRy.YD2Qz31XkXsDJv5npsA5lDd/Jjvl17W",
+      "id": 1
+    }
+  ],
+  "devices": [
+    {
+      "user_id": 1,
+      "device_name": "MyDevice",
+      "public_key": "l4AFXdUJDWa6xEYeLxKca72CZKGC7tpkzh2WrerWWbE=",
+      "id": 1
+    },
+    {
+      "user_id": 1,
+      "device_name": "My Device",
+      "public_key": "3gnctiZWHx/q9PAVaCARJukBzONCC20smCSKbdDdv0w=",
+      "id": 2
+    }
+  ],
+  "logins": [
+    {
+      "login_id": "3768747dadeaebe83e7a262673da1e06",
+      "user_id": 1,
+      "challenge": "/HQH5Fc8uece5ZCSMCqVs0sK56Ut3sPwYdXUfz5ldvY=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T11:48:40+00:00",
+      "id": 1
+    },
+    {
+      "login_id": "bdf73f66d098ac86b091b8cb0bc030cf",
+      "user_id": 1,
+      "challenge": "oQtPN8FJVPHfyIe6izoYpS2Oflku/p0X883nWmLwqgA=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T11:51:05+00:00",
+      "id": 2
+    },
+    {
+      "login_id": "e0b9487abdf5b7682a067700c89cec9d",
+      "user_id": 1,
+      "challenge": "BqDe6ShhWotTtDGlIPTwkHlxlmVBUUageJlCJChNDaM=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T11:55:58+00:00",
+      "id": 3
+    },
+    {
+      "login_id": "0cc620fa1e2b311dd78bf0e45927946e",
+      "user_id": 1,
+      "challenge": "9BuUIznVxOJjDeyVZZ129KnuJeD7eGWjXyshy83AjGI=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T11:59:38+00:00",
+      "id": 4
+    },
+    {
+      "login_id": "3daa27986383866a5c2d1343fdda2c8a",
+      "user_id": 1,
+      "challenge": "Ce6pYteXCCadsSYl/skJUeoJkbcflLDhAL0C675C01M=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T12:01:46+00:00",
+      "id": 5
+    },
+    {
+      "login_id": "af11d3aa6f1f5d19f01869aed4e8c741",
+      "user_id": 1,
+      "challenge": "qqA/ILQ85C1OoC+8IG/Cbsfkv//uxlNNIbaXp3XRtDA=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T12:11:17+00:00",
+      "id": 6
+    },
+    {
+      "login_id": "822594e93d530e411d8b644f0d3114d5",
+      "user_id": 1,
+      "challenge": "arHkBAkOPLGP4i20q60XC+1QDgvOda5OwxeNR1jhEAk=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T12:21:34+00:00",
+      "id": 7
+    },
+    {
+      "login_id": "7b1a8924acff6e47e79807b7536f33b0",
+      "user_id": 1,
+      "challenge": "F1nQh9wNHqEXDgm6FJIweUPBkigccd2T6J44nggD0DA=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-12T12:24:17+00:00",
+      "id": 8
+    }
+  ]
 }

@@ -18,8 +18,8 @@ class Crypto
         }
 
         try {
-            $publicKey = sodium_base642bin($publicKeyB64, SODIUM_BASE64_VARIANT_ORIGINAL);
-            $signature = sodium_base642bin($signatureB64, SODIUM_BASE64_VARIANT_ORIGINAL);
+            $publicKey = sodium_base642bin($publicKeyB64, \SODIUM_BASE64_VARIANT_ORIGINAL);
+            $signature = sodium_base642bin($signatureB64, \SODIUM_BASE64_VARIANT_ORIGINAL);
             $message = base64_decode($messageB64, true);
         } catch (Exception $e) {
             return false;
