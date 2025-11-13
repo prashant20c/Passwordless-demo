@@ -9,7 +9,7 @@
           Welcome back, {{ profile?.full_name ?? 'friend' }}
         </p>
       </div>
-      <div class="flex items-center gap-3 text-sm text-slate-300">
+      <div class="flex flex-wrap items-center gap-3 text-sm text-slate-300">
         <a
           v-for="item in navItems"
           :key="item.href"
@@ -64,6 +64,43 @@
               <dd class="text-lg font-medium text-emerald-300">Secure · Passkey verified</dd>
             </div>
           </dl>
+        </section>
+
+        <section
+          id="link-device"
+          class="rounded-3xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950/60 p-6 space-y-5"
+        >
+          <div>
+            <h3 class="text-lg font-semibold text-indigo-300">Link a trusted device</h3>
+            <p class="text-sm text-slate-400 mt-1">
+              Generate a one-time code and enter it inside the Trustlogin Device App to enrol a new device.
+            </p>
+          </div>
+          <p v-if="linkError" class="text-sm text-rose-300">{{ linkError }}</p>
+          <div
+            v-if="linkCode"
+            class="rounded-2xl border border-indigo-500/40 bg-slate-950/70 p-5 space-y-3 text-center"
+          >
+            <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Link code</p>
+            <p class="text-4xl font-semibold tracking-[0.3em] text-slate-50">
+              {{ formattedLinkCode }}
+            </p>
+            <p class="text-xs text-slate-400">
+              Expires at {{ linkExpiryDisplay }}.
+            </p>
+          </div>
+          <button
+            class="w-full rounded-2xl border border-indigo-400/50 bg-indigo-500/20 px-4 py-3 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/30 disabled:opacity-60"
+            :disabled="linkLoading || !profile?.email"
+            @click="generateLinkCode"
+          >
+            {{ linkLoading ? 'Generating code…' : linkCode ? 'Generate new code' : 'Generate link code' }}
+          </button>
+          <ul class="text-xs text-slate-500 space-y-1">
+            <li>Codes are single-use and expire in about 10 minutes.</li>
+            <li>Keep this window open until your device is linked.</li>
+            <li>Enter your email, device name, and this code in the Trustlogin Device App.</li>
+          </ul>
         </section>
 
         <section
@@ -122,17 +159,22 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchProfile } from '../api';
+import { fetchProfile, startDeviceLink } from '../api';
 import { clearToken } from '../token';
 
 const router = useRouter();
 const profile = ref(null);
 const error = ref('');
 const loading = ref(true);
+const linkCode = ref('');
+const linkExpiresAt = ref('');
+const linkLoading = ref(false);
+const linkError = ref('');
 const navItems = [
   { label: 'Overview', href: '#overview' },
+  { label: 'Link Device', href: '#link-device' },
   { label: 'Safeguards', href: '#safeguards' },
   { label: 'Headlines', href: '#news' },
 ];
@@ -192,4 +234,44 @@ function signOut() {
 }
 
 onMounted(loadProfile);
+
+async function generateLinkCode() {
+  if (!profile.value?.email) {
+    return;
+  }
+  linkError.value = '';
+  linkLoading.value = true;
+  try {
+    const result = await startDeviceLink({ email: profile.value.email });
+    linkCode.value = result.link_code;
+    linkExpiresAt.value = result.expires_at;
+  } catch (err) {
+    linkError.value = err?.response?.data?.message ?? 'Could not generate a link code.';
+  } finally {
+    linkLoading.value = false;
+  }
+}
+
+const formattedLinkCode = computed(() => {
+  if (!linkCode.value) {
+    return '';
+  }
+  const normalized = linkCode.value.trim();
+  if (normalized.length <= 3) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 3)}-${normalized.slice(3)}`;
+});
+
+const linkExpiryDisplay = computed(() => {
+  if (!linkExpiresAt.value) {
+    return '—';
+  }
+  const expires = new Date(linkExpiresAt.value);
+  if (Number.isNaN(expires.getTime())) {
+    return '—';
+  }
+  const minutes = Math.max(0, Math.round((expires.getTime() - Date.now()) / 60000));
+  return `${expires.toLocaleTimeString()} (${minutes} min left)`;
+});
 </script>

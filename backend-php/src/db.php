@@ -51,6 +51,11 @@ function db_create_user(array $data): array
     return db_request('POST', 'users', $data);
 }
 
+function db_update_user(int $id, array $data): array
+{
+    return db_request('PATCH', "users/$id", $data);
+}
+
 function db_find_user_by_id($id): ?array
 {
     $users = db_request('GET', 'users', null, ['id' => $id]);
@@ -65,6 +70,23 @@ function db_create_device(array $data): array
 function db_get_devices_by_user(int $userId): array
 {
     return db_request('GET', 'devices', null, ['user_id' => $userId]);
+}
+
+function db_find_device_by_id(int $id): ?array
+{
+    $devices = db_request('GET', 'devices', null, ['id' => $id]);
+    return $devices[0] ?? null;
+}
+
+function db_find_device_by_user_and_name(int $userId, string $deviceName): ?array
+{
+    $devices = db_request('GET', 'devices', null, ['user_id' => $userId, 'device_name' => $deviceName]);
+    return $devices[0] ?? null;
+}
+
+function db_update_device(int $id, array $data): array
+{
+    return db_request('PATCH', "devices/$id", $data);
 }
 
 function db_create_login(array $data): array
@@ -91,4 +113,9 @@ function db_get_pending_logins_by_user(int $userId): array
 function db_get_logins(array $params): array
 {
     return db_request('GET', 'logins', null, $params);
+}
+
+function db_update_login_status(int $id, array $data): array
+{
+    return db_update_login($id, $data);
 }

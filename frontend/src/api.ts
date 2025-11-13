@@ -30,3 +30,7 @@ export function pollLoginStatus(loginId) {
 export function fetchProfile() {
   return api.get('/api/me').then((r) => r.data);
 }
+
+export function startDeviceLink(payload: { email: string }) {
+  return api.post('/api/device/link/start', payload).then((r) => r.data);
+}

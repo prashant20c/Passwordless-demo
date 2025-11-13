@@ -1,6 +1,6 @@
-# Trust Login Demo
+# Trustlogin
 
-A minimal password-less authentication demo showcasing a multi-channel login experience:
+Trustlogin is a minimal password-less authentication demo showcasing a multi-channel login experience:
 
 - **Frontend**: Vite + Vue 3 + Tailwind CSS single-page app for registration, login, and account views.
 - **Backend**: Core PHP API that coordinates challenges and JWT issuance.
@@ -12,7 +12,7 @@ This repo stitches the pieces together so you can experience a password-less log
 ## Project Structure
 
 ```
-Trust Login-demo/
+Trustlogin-demo/
   README.md
   .env.example
   sample_data.md
@@ -60,6 +60,7 @@ JWT_SECRET=dev_secret_change_me
 CORS_ORIGIN=http://localhost:5173
 LOGIN_RATE_PER_MIN=5
 LOGIN_TIMEOUT_SECONDS=60
+LINK_CODE_TTL_SECONDS=600
 ```
 
 The PHP built-in server exposes the API at <http://localhost:8080>.
@@ -85,19 +86,29 @@ pip install -r requirements.txt
 python app.py
 ```
 
-On first run the GUI prompts for email, password, and a device name, then generates an Ed25519 keypair that remains in `state.json`. For demo purposes the keys are stored in plain text; production apps must use secure enclaves or OS keychains.
+On first run the GUI prompts for your email, a short-lived device link code, and a device name, then generates an Ed25519 keypair that remains in `state.json`. For demo purposes the keys are stored in plain text; production apps must use secure enclaves or OS keychains.
+
+## Device Linking using Link Codes
+
+1. Register or sign in on the Trustlogin web app and visit the dashboard.
+2. Click **Generate Link Code** to obtain a 6-digit code that expires in roughly ten minutes.
+3. Open the Trustlogin Device App (GUI or CLI), enter your email, the link code, and a friendly device name.
+4. The device app generates an Ed25519 key pair locally, sends the public key plus the link code to the backend, and stores the private key in `state.json`.
+5. Link codes are one-time-use. Generating a new code immediately invalidates any previous unused code.
 
 ## Sample Flow
 
 1. Start JSON Server, backend PHP server, and the frontend dev server.
-2. Launch the Python device GUI and link the device using your email/password.
-3. Register a new user on the web app (or use an existing user from `sample_data.md`).
-4. On the login page, submit your email; the device receives a challenge.
-5. Approve the challenge in the device app; the web app observes approval, stores the JWT, and loads the account view.
+2. Register a new user on the web app (or use an existing user from `sample_data.md`).
+3. From the dashboard, generate a Device Link Code.
+4. Launch the Python device GUI, enter your email, device name, and the freshly generated code to link the device.
+5. On the login page, submit your email; the device receives a challenge.
+6. Approve the challenge in the device app; the web app observes approval, stores the JWT, and loads the account view.
 
 ## Notes
 
 - This project favors clarity over production hardening. The challenge expiry, rate limits, and key storage are simplified for demonstration purposes.
 - Sodium must be enabled in PHP. If you encounter `Sodium extension missing`, install/enable it (e.g., `sudo apt install php-sodium`).
+- User authentication and device enrolment are fully passwordless: registrations only collect name/email, and devices use short-lived link codes + public keys.
 
 Enjoy experimenting with password-less flows!

@@ -31,4 +31,12 @@ class Crypto
 
         return sodium_crypto_sign_verify_detached($signature, $message, $publicKey);
     }
+
+    public static function generateLinkCode(int $digits = 6): string
+    {
+        $digits = max(1, min($digits, 10));
+        $max = (10 ** $digits) - 1;
+        $number = random_int(0, $max);
+        return str_pad((string) $number, $digits, '0', STR_PAD_LEFT);
+    }
 }

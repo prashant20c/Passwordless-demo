@@ -10,7 +10,7 @@ use App\Lib\Validator;
 
 function handle_register(array $payload): void
 {
-    Validator::require($payload, ['full_name', 'email', 'password']);
+    Validator::require($payload, ['full_name', 'email']);
     Validator::email($payload['email']);
 
     if (App\db_find_user_by_email($payload['email'])) {
@@ -20,7 +20,8 @@ function handle_register(array $payload): void
     $user = App\db_create_user([
         'full_name' => $payload['full_name'],
         'email' => $payload['email'],
-        'password_hash' => password_hash($payload['password'], PASSWORD_DEFAULT)
+        'link_code' => null,
+        'link_code_expires_at' => null
     ]);
 
     Response::json(['ok' => true, 'user_id' => $user['id']]);

@@ -1,6 +1,7 @@
 {
   "email": "abc@gmail.com",
-  "device_name": "Prashant's pc",
-  "private_key": "dPlqHym1wJHWntKB/SETDrpbpTuchrP7F3Tt+rNHqC0=",
-  "public_key": "hwJeea5nszsTrjWwVKHiSS43bJuDO+uJKHjtr13KuXE="
+  "device_name": "home pc",
+  "private_key": "OUGFStYizJm3R/hRF1ugwMFHCyciJj99PwxryyNMRas=",
+  "public_key": "/Q37v9ifiDMsd7e4mS0vSX1S06rfi4KSIPsSiqZmxwY=",
+  "device_id": 4
 }

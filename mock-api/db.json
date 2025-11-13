@@ -1,10 +1,18 @@
 {
   "users": [
     {
-      "full_name": "dfgdfg",
-      "email": "abc@gmail.com",
-      "password_hash": "$2y$10$J0.Y0IVct.IeRzjlt1mRy.YD2Qz31XkXsDJv5npsA5lDd/Jjvl17W",
+      "full_name": "Demo User",
+      "email": "user@example.com",
+      "link_code": null,
+      "link_code_expires_at": null,
       "id": 1
+    },
+    {
+      "full_name": "Prashant Poudel",
+      "email": "abc@gmail.com",
+      "link_code": null,
+      "link_code_expires_at": null,
+      "id": 2
     }
   ],
   "devices": [
@@ -25,6 +33,12 @@
       "device_name": "Prashant's pc",
       "public_key": "hwJeea5nszsTrjWwVKHiSS43bJuDO+uJKHjtr13KuXE=",
       "id": 3
+    },
+    {
+      "user_id": 2,
+      "device_name": "home pc",
+      "public_key": "/Q37v9ifiDMsd7e4mS0vSX1S06rfi4KSIPsSiqZmxwY=",
+      "id": 4
     }
   ],
   "logins": [
@@ -181,6 +195,24 @@
       "status": "PENDING",
       "created_at": "2025-11-13T00:16:07+00:00",
       "id": 18
+    },
+    {
+      "login_id": "b6b0b4d4ea0eb9b49f229883748959b5",
+      "user_id": 2,
+      "challenge": "EAb8DgnIp4o2WHOgwcOxuGwqR6QMPc/J1YGqbi/bn6c=",
+      "status": "APPROVED",
+      "created_at": "2025-11-13T05:54:02+00:00",
+      "id": 19,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjMwMTMyNDQsInN1YiI6MiwiZXhwIjoxNzYzMDEzODQ0fQ.wlRYFFgJ9u3QZ4HsUVgRmWvO53KMfDANAgp42YNI0ic",
+      "approved_at": "2025-11-13T05:54:04+00:00"
+    },
+    {
+      "login_id": "993a914b97cdfd6373a3446c079d9ff2",
+      "user_id": 2,
+      "challenge": "olt358Y9fwv1suXLgW/ruw33c6eare20S1Vf1UMFOsY=",
+      "status": "EXPIRED",
+      "created_at": "2025-11-13T06:14:57+00:00",
+      "id": 20
     }
   ]
 }
