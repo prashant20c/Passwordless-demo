@@ -25,12 +25,26 @@
           {{ loading ? 'Waiting for approval…' : 'Login without password' }}
         </button>
       </form>
-      <div v-if="loading" class="rounded-2xl bg-slate-800/60 border border-slate-700 px-5 py-4 space-y-2">
+      <div
+        v-if="loading"
+        class="rounded-2xl bg-slate-800/60 border border-slate-700 px-5 py-4 space-y-3 text-slate-200"
+      >
         <p class="text-sm text-slate-300 flex items-center gap-2">
           <span class="inline-flex h-3 w-3 animate-pulse rounded-full bg-amber-300"></span>
           Waiting for your device approval…
         </p>
-        <p class="text-xs text-slate-500">Expires in {{ secondsRemaining }}s</p>
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span>Expires in</span>
+            <span class="font-semibold text-amber-200">{{ formattedCountdown }}</span>
+          </div>
+          <div class="h-1.5 w-full rounded-full bg-slate-700/70 overflow-hidden">
+            <div
+              class="h-full bg-gradient-to-r from-amber-300 to-amber-200 transition-all duration-300 ease-linear"
+              :style="{ width: countdownPercent }"
+            />
+          </div>
+        </div>
       </div>
       <p class="text-sm text-slate-400 text-center">
         New here?
@@ -41,7 +55,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import BrandCard from '../components/BrandCard.vue';
 import { clearToken, saveToken } from '../token';
@@ -49,10 +63,11 @@ import { pollLoginStatus, requestLogin } from '../api';
 
 const router = useRouter();
 const email = ref('');
+const COUNTDOWN_SECONDS = 60;
 const loading = ref(false);
 const error = ref('');
 const loginId = ref('');
-const secondsRemaining = ref(60);
+const secondsRemaining = ref(COUNTDOWN_SECONDS);
 let timer = null;
 let poller = null;
 
@@ -61,7 +76,7 @@ clearToken();
 async function startLogin() {
   if (loading.value) return;
   error.value = '';
-  secondsRemaining.value = 60;
+  secondsRemaining.value = COUNTDOWN_SECONDS;
   try {
     loading.value = true;
     const { login_id } = await requestLogin({ email: email.value });
@@ -76,6 +91,7 @@ async function startLogin() {
 
 function startCountdown() {
   clearInterval(timer);
+  secondsRemaining.value = COUNTDOWN_SECONDS;
   timer = setInterval(() => {
     secondsRemaining.value -= 1;
     if (secondsRemaining.value <= 0) {
@@ -88,7 +104,9 @@ function startCountdown() {
 }
 
 function startPolling() {
-  clearTimers();
+  if (poller) {
+    clearInterval(poller);
+  }
   poller = setInterval(async () => {
     try {
       const result = await pollLoginStatus(loginId.value);
@@ -124,5 +142,17 @@ function stopPolling() {
 
 onBeforeUnmount(() => {
   stopPolling();
+});
+
+const countdownPercent = computed(() => {
+  const clamped = Math.max(secondsRemaining.value, 0);
+  return `${(clamped / COUNTDOWN_SECONDS) * 100}%`;
+});
+
+const formattedCountdown = computed(() => {
+  const clamped = Math.max(secondsRemaining.value, 0);
+  const mins = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const secs = String(clamped % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
 });
 </script>
