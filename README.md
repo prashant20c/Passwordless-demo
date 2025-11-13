@@ -1,4 +1,4 @@
-# Passwordless Demo
+# Trust Login Demo
 
 A minimal password-less authentication demo showcasing a multi-channel login experience:
 
@@ -12,7 +12,7 @@ This repo stitches the pieces together so you can experience a password-less log
 ## Project Structure
 
 ```
-passwordless-demo/
+Trust Login-demo/
   README.md
   .env.example
   sample_data.md

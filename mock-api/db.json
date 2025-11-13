@@ -19,6 +19,12 @@
       "device_name": "My Device",
       "public_key": "3gnctiZWHx/q9PAVaCARJukBzONCC20smCSKbdDdv0w=",
       "id": 2
+    },
+    {
+      "user_id": 1,
+      "device_name": "Prashant's pc",
+      "public_key": "hwJeea5nszsTrjWwVKHiSS43bJuDO+uJKHjtr13KuXE=",
+      "id": 3
     }
   ],
   "logins": [
@@ -109,6 +115,56 @@
       "status": "EXPIRED",
       "created_at": "2025-11-12T23:23:13+00:00",
       "id": 11
+    },
+    {
+      "login_id": "da674b8d42ea86f8b82ccd6bb1612900",
+      "user_id": 1,
+      "challenge": "nuH98RYDjb893lqgsueEpfZF2Gx5YlKyw+sdxC9xI54=",
+      "status": "APPROVED",
+      "created_at": "2025-11-12T23:40:09+00:00",
+      "id": 12,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjI5OTA4MTEsInN1YiI6MSwiZXhwIjoxNzYyOTkxNDExfQ.nz2Pr25b4_C6-zDe7YuQWaaEYjAC0F4cZPYNvUHIKss",
+      "approved_at": "2025-11-12T23:40:11+00:00"
+    },
+    {
+      "login_id": "ec3f59a6281ff43a435b27336306a853",
+      "user_id": 1,
+      "challenge": "I6Qd6pG6dVeN7p5sf0Qu5fm/ekyKbhXyLtCuliXDLms=",
+      "status": "APPROVED",
+      "created_at": "2025-11-12T23:41:20+00:00",
+      "id": 13,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjI5OTA5MjcsInN1YiI6MSwiZXhwIjoxNzYyOTkxNTI3fQ.9fhGi8C0JJ77HLoj0XDHpsmeMmz2yHIZDgBK1vPb4HE",
+      "approved_at": "2025-11-12T23:42:07+00:00"
+    },
+    {
+      "login_id": "a69025edaffaf8ba1e0360b99504f4d6",
+      "user_id": 1,
+      "challenge": "uNHAUaJj+3Gz3K/toKwY6SDQGw4VK7vYE2gkyxPh6Lc=",
+      "status": "APPROVED",
+      "created_at": "2025-11-12T23:56:28+00:00",
+      "id": 14,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjI5OTE3OTMsInN1YiI6MSwiZXhwIjoxNzYyOTkyMzkzfQ.C0QKgst8XSNjeL5ZN847-xrmjPMKbq07WiRy1BF1aho",
+      "approved_at": "2025-11-12T23:56:33+00:00"
+    },
+    {
+      "login_id": "221c33f2cb0b855aafbd5068c5f201ec",
+      "user_id": 1,
+      "challenge": "m885CufUt5qi/4+c7BDvErCTmBEBeRDXdL1ldcUOQvc=",
+      "status": "APPROVED",
+      "created_at": "2025-11-12T23:58:55+00:00",
+      "id": 15,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjI5OTE5MzgsInN1YiI6MSwiZXhwIjoxNzYyOTkyNTM4fQ.p-3Mvj6OZ4rin1DRTkKmFFakgXs9amO1ezLvMtqa2iw",
+      "approved_at": "2025-11-12T23:58:58+00:00"
+    },
+    {
+      "login_id": "f977bb72481df1757f5e0ffb05158a9b",
+      "user_id": 1,
+      "challenge": "Y9h50tr8jbU0EJ483lsjtVXy64rgN53TTDeMNR5xLs4=",
+      "status": "APPROVED",
+      "created_at": "2025-11-13T00:10:50+00:00",
+      "id": 16,
+      "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjI5OTI2NTIsInN1YiI6MSwiZXhwIjoxNzYyOTkzMjUyfQ.nE6IT9OzDePK5KiDkJOqnv8kt178rAvFUJJy7v-qZas",
+      "approved_at": "2025-11-13T00:10:52+00:00"
     }
   ]
 }

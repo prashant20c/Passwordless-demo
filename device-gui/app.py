@@ -182,7 +182,7 @@ if tk is not None:
     class DeviceApp(tk.Tk):
         def __init__(self, poll_interval=POLL_INTERVAL):
             super().__init__()
-            self.title('Lyra Lane Device Approver')
+            self.title('Trust Login Device Approver')
             self.geometry('520x500')
             self.resizable(False, False)
 
@@ -202,7 +202,7 @@ if tk is not None:
 
             brand_frame = ttk.Frame(self, padding=20)
             brand_frame.grid(row=0, column=0, sticky='ew')
-            title = ttk.Label(brand_frame, text='Lyra Lane Device', font=('Poppins', 18, 'bold'))
+            title = ttk.Label(brand_frame, text='Trust login Device', font=('Poppins', 18, 'bold'))
             title.pack(anchor='center')
             subtitle = ttk.Label(brand_frame, text='Approve web logins with your trusted device')
             subtitle.pack(anchor='center', pady=(4, 0))
@@ -294,7 +294,7 @@ if tk is not None:
             top = tk.Toplevel(self)
             top.title('Approve login?')
             top.geometry('360x220')
-            ttk.Label(top, text='Passwordless sign-in', font=('Poppins', 14, 'bold')).pack(pady=(20, 10))
+            ttk.Label(top, text='Trust Login sign-in', font=('Poppins', 14, 'bold')).pack(pady=(20, 10))
             ttk.Label(top, text=f"Email: {self.client.state_data.get('email')}").pack()
             ttk.Label(top, text=f"Requested: {login['created_at']}").pack(pady=(0, 10))
 
@@ -341,7 +341,7 @@ class DeviceCLI:
         print(f'[{time.strftime("%H:%M:%S")}] {message}')
 
     def run(self):
-        self.log('Lyra Lane Device CLI')
+        self.log('Trust login Device CLI')
         if not self.client.is_linked():
             self.log('No linked device found. Follow the prompts to link this terminal.')
             self.prompt_link()
@@ -416,7 +416,7 @@ class DeviceCLI:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Lyra Lane device app')
+    parser = argparse.ArgumentParser(description='Trust Login device app')
     parser.add_argument('--cli', action='store_true', help='Run in terminal mode instead of the Tk GUI.')
     parser.add_argument('--poll-interval', type=int, default=POLL_INTERVAL, help='Seconds between poll requests.')
     args = parser.parse_args()
