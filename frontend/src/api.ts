@@ -34,3 +34,15 @@ export function fetchProfile() {
 export function startDeviceLink(payload: { email: string }) {
   return api.post('/api/device/link/start', payload).then((r) => r.data);
 }
+
+export function fetchSessions() {
+  return api.get('/api/me/sessions').then((r) => r.data);
+}
+
+export function fetchDevices() {
+  return api.get('/api/me/devices').then((r) => r.data);
+}
+
+export function logoutSession() {
+  return api.post('/api/me/logout').then((r) => r.data);
+}

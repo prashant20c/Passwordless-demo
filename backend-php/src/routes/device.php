@@ -3,6 +3,7 @@
 namespace App\Routes;
 
 use App;
+use App\Lib\ClientLabel;
 use App\Lib\Crypto;
 use App\Lib\Jwt;
 use App\Lib\Response;
@@ -70,6 +71,7 @@ function handle_device_link_complete(array $payload): void
     if ($existingDevice) {
         $device = App\db_update_device($existingDevice['id'], $deviceData);
     } else {
+        $deviceData['linked_at'] = gmdate('c');
         $device = App\db_create_device($deviceData);
     }
 
@@ -110,7 +112,10 @@ function handle_device_pending(string $email): void
             'login_id' => $login['login_id'],
             'challenge' => $login['challenge'],
             'created_at' => $login['created_at'],
-            'expires_at' => gmdate('c', $expiresAt)
+            'expires_at' => gmdate('c', $expiresAt),
+            'user_agent' => $login['user_agent'] ?? null,
+            'ip_address' => $login['ip_address'] ?? null,
+            'client_label' => $login['client_label'] ?? ClientLabel::describe($login['user_agent'] ?? '')
         ];
     }, $valid);
 
@@ -155,17 +160,42 @@ function handle_device_approve(array $payload): void
         Response::error('Invalid signature', 400);
     }
 
+    $sessionId = $login['session_id'] ?? $login['login_id'];
+    $clientLabel = $login['client_label'] ?? ClientLabel::describe($login['user_agent'] ?? '');
+
     $token = Jwt::issue([
         'sub' => $user['id'],
-        'exp' => time() + 600
+        'exp' => time() + 600,
+        'sid' => $sessionId
     ]);
 
     App\db_update_login($login['id'], [
         'status' => 'APPROVED',
         'token' => $token,
         'approved_at' => gmdate('c'),
-        'device_id' => $matchedDeviceId
+        'device_id' => $matchedDeviceId,
+        'session_id' => $sessionId
     ]);
+
+    $session = App\db_find_session_by_session_id($sessionId);
+    $sessionData = [
+        'session_id' => $sessionId,
+        'login_id' => $login['login_id'],
+        'user_id' => $user['id'],
+        'device_id' => $matchedDeviceId,
+        'client_label' => $clientLabel,
+        'user_agent' => $login['user_agent'] ?? null,
+        'ip_address' => $login['ip_address'] ?? null,
+        'status' => 'active',
+        'created_at' => $session['created_at'] ?? gmdate('c'),
+        'last_seen_at' => gmdate('c')
+    ];
+
+    if ($session) {
+        App\db_update_session($session['id'], $sessionData);
+    } else {
+        App\db_create_session($sessionData);
+    }
 
     Response::json(['ok' => true]);
 }
@@ -203,35 +233,83 @@ function handle_device_sessions_end(array $payload): void
     Validator::require($payload, ['device_id', 'email']);
     Validator::email($payload['email']);
 
-    $user = App\db_find_user_by_email($payload['email']);
-    if (!$user) {
-        Response::error('User not found', 404);
-    }
+    $context = resolve_user_and_device($payload['email'], (int) $payload['device_id']);
+    $sessionId = $payload['session_id'] ?? null;
 
-    $deviceId = (int) $payload['device_id'];
-    $device = App\db_find_device_by_id($deviceId);
-    if (!$device || $device['user_id'] !== $user['id']) {
-        Response::error('Device mismatch', 403);
+    if ($sessionId) {
+        $session = App\db_find_session_by_session_id($sessionId);
+        if (!$session || (int) $session['user_id'] !== (int) $context['user']['id']) {
+            Response::error('Session not found', 404);
+        }
+        $sessions = [$session];
+    } else {
+        $sessions = App\db_get_sessions([
+            'user_id' => $context['user']['id'],
+            'status' => 'active'
+        ]);
     }
-
-    $activeSessions = App\db_get_logins([
-        'user_id' => $user['id'],
-        'status' => 'APPROVED'
-    ]);
 
     $updated = 0;
-    foreach ($activeSessions as $session) {
-        App\db_update_login($session['id'], [
-            'status' => 'ENDED',
-            'ended_at' => gmdate('c'),
-            'device_id' => $deviceId
+    foreach ($sessions as $session) {
+        App\db_update_session($session['id'], [
+            'status' => 'revoked',
+            'revoked_at' => gmdate('c'),
+            'revoked_by_device_id' => $context['device']['id']
         ]);
+        if (!empty($session['login_id'])) {
+            $login = App\db_find_login_by_login_id($session['login_id']);
+            if ($login) {
+                App\db_update_login($login['id'], [
+                    'status' => 'ENDED',
+                    'ended_at' => gmdate('c')
+                ]);
+            }
+        }
         $updated++;
     }
 
     Response::json([
-        'status' => 'ENDED',
-        'ended_sessions' => $updated,
-        'message' => 'Requested active sessions to be ended (TODO: replace with real session store).'
+        'status' => 'revoked',
+        'ended_sessions' => $updated
     ]);
+}
+
+function handle_device_sessions_list(string $email, int $deviceId): void
+{
+    $context = resolve_user_and_device($email, $deviceId);
+    $sessions = App\db_get_sessions([
+        'user_id' => $context['user']['id'],
+        'status' => 'active',
+        '_sort' => 'created_at',
+        '_order' => 'desc'
+    ]);
+
+    $payload = array_map(function ($session) {
+        return [
+            'session_id' => $session['session_id'],
+            'client_label' => $session['client_label'] ?? ClientLabel::describe($session['user_agent'] ?? ''),
+            'ip_address' => $session['ip_address'] ?? null,
+            'created_at' => $session['created_at'],
+            'last_seen_at' => $session['last_seen_at'] ?? null,
+            'status' => $session['status']
+        ];
+    }, $sessions);
+
+    Response::json(['sessions' => $payload]);
+}
+
+function resolve_user_and_device(string $email, int $deviceId): array
+{
+    Validator::email($email);
+    $user = App\db_find_user_by_email($email);
+    if (!$user) {
+        Response::error('User not found', 404);
+    }
+
+    $device = App\db_find_device_by_id($deviceId);
+    if (!$device || (int) $device['user_id'] !== (int) $user['id']) {
+        Response::error('Device mismatch', 403);
+    }
+
+    return ['user' => $user, 'device' => $device];
 }

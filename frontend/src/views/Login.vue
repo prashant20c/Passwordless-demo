@@ -22,7 +22,7 @@
           class="w-full py-3 rounded-xl bg-amber-300 text-slate-900 font-semibold shadow hover:bg-amber-200 disabled:opacity-70"
           :disabled="loading"
         >
-          {{ loading ? 'Waiting for approval…' : 'Login without password' }}
+          {{ loading ? 'Waiting for approval…' : 'Authenticate' }}
         </button>
       </form>
       <div
@@ -45,6 +45,9 @@
             />
           </div>
         </div>
+        <p v-if="clientIp" class="text-xs text-slate-400">
+          Your network IP: <span class="font-semibold text-slate-200">{{ clientIp }}</span>
+        </p>
       </div>
       <p class="text-sm text-slate-400 text-center">
         New here?
@@ -68,6 +71,7 @@ const loading = ref(false);
 const error = ref('');
 const loginId = ref('');
 const secondsRemaining = ref(COUNTDOWN_SECONDS);
+const clientIp = ref('');
 let timer = null;
 let poller = null;
 
@@ -77,10 +81,12 @@ async function startLogin() {
   if (loading.value) return;
   error.value = '';
   secondsRemaining.value = COUNTDOWN_SECONDS;
+  clientIp.value = '';
   try {
     loading.value = true;
-    const { login_id } = await requestLogin({ email: email.value });
+    const { login_id, ip_address } = await requestLogin({ email: email.value });
     loginId.value = login_id;
+    clientIp.value = ip_address ?? '';
     startCountdown();
     startPolling();
   } catch (err) {
@@ -155,4 +161,5 @@ const formattedCountdown = computed(() => {
   const secs = String(clamped % 60).padStart(2, '0');
   return `${mins}:${secs}`;
 });
+
 </script>

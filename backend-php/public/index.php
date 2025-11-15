@@ -8,10 +8,14 @@ use function App\Routes\handle_device_link_complete;
 use function App\Routes\handle_device_link_start;
 use function App\Routes\handle_device_reject;
 use function App\Routes\handle_device_sessions_end;
+use function App\Routes\handle_device_sessions_list;
 use function App\Routes\handle_device_pending;
 use function App\Routes\handle_login_request;
 use function App\Routes\handle_login_status;
 use function App\Routes\handle_me;
+use function App\Routes\handle_me_devices;
+use function App\Routes\handle_me_logout;
+use function App\Routes\handle_me_sessions;
 use function App\Routes\handle_register;
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
@@ -50,6 +54,15 @@ switch (true) {
     case $path === '/api/me' && $method === 'GET':
         handle_me($_SERVER['HTTP_AUTHORIZATION'] ?? null);
         break;
+    case $path === '/api/me/sessions' && $method === 'GET':
+        handle_me_sessions($_SERVER['HTTP_AUTHORIZATION'] ?? null);
+        break;
+    case $path === '/api/me/devices' && $method === 'GET':
+        handle_me_devices($_SERVER['HTTP_AUTHORIZATION'] ?? null);
+        break;
+    case $path === '/api/me/logout' && $method === 'POST':
+        handle_me_logout($_SERVER['HTTP_AUTHORIZATION'] ?? null);
+        break;
     case $path === '/api/device/link/start' && $method === 'POST':
         handle_device_link_start(getJsonInput());
         break;
@@ -61,6 +74,14 @@ switch (true) {
         break;
     case $path === '/api/device/sessions/end' && $method === 'POST':
         handle_device_sessions_end(getJsonInput());
+        break;
+    case $path === '/api/device/sessions' && $method === 'GET':
+        $email = $_GET['email'] ?? '';
+        $deviceId = isset($_GET['device_id']) ? (int) $_GET['device_id'] : 0;
+        if (!$email || !$deviceId) {
+            Response::error('Missing email or device_id', 422);
+        }
+        handle_device_sessions_list($email, $deviceId);
         break;
     case $path === '/api/device/pending' && $method === 'GET':
         $email = $_GET['email'] ?? '';

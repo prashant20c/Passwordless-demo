@@ -1,7 +1,8 @@
 {
-  "email": "abc@gmail.com",
-  "device_name": "home pc",
-  "private_key": "OUGFStYizJm3R/hRF1ugwMFHCyciJj99PwxryyNMRas=",
-  "public_key": "/Q37v9ifiDMsd7e4mS0vSX1S06rfi4KSIPsSiqZmxwY=",
-  "device_id": 4
+  "email": "prasahnt@gmail.com",
+  "device_name": "Prashant",
+  "private_key": "Hpa0Qr2tutoXzkoI6lQGpVNEWXh6re7FkseP1Ssc5XY=",
+  "public_key": "qWyFZUPzQIkVcuEmOTwWXO19r7E7YyEsEblvvpQRAAc=",
+  "device_id": 2,
+  "pin_hash": "6711597a2bc4e5878638c2115353f0792a9bec6ff55a84f283c4be5d897fe110"
 }

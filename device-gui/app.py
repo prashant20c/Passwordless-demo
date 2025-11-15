@@ -1,10 +1,13 @@
 import argparse
 import base64
+import hashlib
 import json
 import os
 import queue
 import threading
 import time
+from getpass import getpass
+from typing import Dict, List
 
 import requests
 from nacl import signing
@@ -12,11 +15,11 @@ from nacl import signing
 
 try:
     import tkinter as tk
-    from tkinter import messagebox, scrolledtext, ttk
+    from tkinter import messagebox, scrolledtext, simpledialog, ttk
     TclError = tk.TclError
 except Exception:  # Tk is optional for CLI mode
     tk = None
-    messagebox = scrolledtext = ttk = None
+    messagebox = scrolledtext = simpledialog = ttk = None
 
     class TclError(Exception):
         pass
@@ -24,6 +27,71 @@ except Exception:  # Tk is optional for CLI mode
 API_BASE = os.environ.get('API_BASE', 'http://localhost:8080').rstrip('/')
 STATE_FILE = os.path.join(os.path.dirname(__file__), 'state.json')
 POLL_INTERVAL = 4
+PIN_MIN_LENGTH = 4
+PIN_MAX_LENGTH = 6
+
+OS_SIGNATURES = [
+    ('windows', 'Windows'),
+    ('mac os x', 'macOS'),
+    ('iphone', 'iPhone'),
+    ('ipad', 'iPad'),
+    ('android', 'Android'),
+    ('linux', 'Linux'),
+]
+
+BROWSER_SIGNATURES = [
+    ('edg', 'Microsoft Edge'),
+    ('crios', 'Chrome'),
+    ('chrome', 'Chrome'),
+    ('safari', 'Safari'),
+    ('firefox', 'Firefox'),
+    ('fxios', 'Firefox'),
+    ('opr', 'Opera'),
+    ('opera', 'Opera'),
+    ('msie', 'Internet Explorer'),
+    ('trident', 'Internet Explorer'),
+]
+
+
+def describe_user_agent(user_agent: str) -> str:
+    ua = (user_agent or '').lower()
+    if not ua:
+        return 'Unknown device'
+
+    os_label = 'Unknown device'
+    for needle, label in OS_SIGNATURES:
+        if needle in ua:
+            os_label = label
+            break
+    if os_label == 'Unknown device' and 'macintosh' in ua:
+        os_label = 'macOS'
+
+    browser_label = 'Unknown browser'
+    for needle, label in BROWSER_SIGNATURES:
+        if needle in ua:
+            browser_label = label
+            break
+
+    if browser_label == 'Safari' and ('iphone' in ua or 'ipad' in ua):
+        browser_label = 'Mobile Safari'
+    if browser_label == 'Chrome' and 'edg' in ua:
+        browser_label = 'Microsoft Edge'
+
+    if browser_label == 'Unknown browser' and os_label == 'Unknown device':
+        return 'Unknown device'
+    if browser_label == 'Unknown browser':
+        return os_label
+    if os_label == 'Unknown device':
+        return browser_label
+
+    return f'{browser_label} on {os_label}'
+
+
+def client_label_from_metadata(metadata: Dict) -> str:
+    label = metadata.get('client_label')
+    if label:
+        return label
+    return describe_user_agent(metadata.get('user_agent', ''))
 
 
 class DeviceError(Exception):
@@ -56,6 +124,7 @@ class DeviceClient:
         self.state_data = load_state()
         self.signing_key = None
         self.pending_logins = []
+        self.active_sessions: List[Dict] = []
         self.polling = False
         self._poll_callback = None
         self.last_poll_ok = None
@@ -114,7 +183,8 @@ class DeviceClient:
             'device_name': device_name,
             'private_key': base64.b64encode(signing_key.encode()).decode(),
             'public_key': payload['public_key'],
-            'device_id': result.get('device_id')
+            'device_id': result.get('device_id'),
+            'pin_hash': None
         }
         save_state(self.state_data)
         self.signing_key = signing_key
@@ -126,7 +196,32 @@ class DeviceClient:
         self.state_data = {}
         self.signing_key = None
         self.pending_logins = []
+        self.active_sessions = []
         save_state(self.state_data)
+
+    def has_pin(self):
+        return bool(self.state_data.get('pin_hash'))
+
+    def set_pin(self, pin):
+        if not self.is_linked():
+            raise DeviceError('Device not linked.')
+        cleaned = pin.strip()
+        if not (PIN_MIN_LENGTH <= len(cleaned) <= PIN_MAX_LENGTH) or not cleaned.isdigit():
+            raise DeviceError(f'PIN must be {PIN_MIN_LENGTH}-{PIN_MAX_LENGTH} digits.')
+        self.state_data['pin_hash'] = self._hash_pin(cleaned)
+        save_state(self.state_data)
+
+    def verify_pin(self, pin):
+        if not self.is_linked():
+            return False
+        stored = self.state_data.get('pin_hash')
+        if not stored:
+            return False
+        return stored == self._hash_pin(pin.strip())
+
+    @staticmethod
+    def _hash_pin(pin):
+        return hashlib.sha256(pin.encode('utf-8')).hexdigest()
 
     def start_polling(self, on_poll):
         if self.polling or not self.is_linked():
@@ -143,6 +238,7 @@ class DeviceClient:
     def _poll_loop(self):
         while self.polling and self.is_linked():
             logins = None
+            sessions = None
             try:
                 resp = requests.get(
                     f'{self.api_base}/api/device/pending',
@@ -159,16 +255,24 @@ class DeviceClient:
                 self.last_poll_ok = False
                 self.last_error = str(exc)
                 self.log(f'Polling failed: {exc}')
+            try:
+                sessions = self.fetch_active_sessions(allow_missing_device=True)
+            except DeviceError as exc:
+                self.log(f'Session sync failed: {exc}')
             finally:
                 self.last_checked_at = time.time()
-                self._emit_poll_update(logins if logins is not None else self.pending_logins)
+                self._emit_poll_update(
+                    logins if logins is not None else self.pending_logins,
+                    sessions if sessions is not None else self.active_sessions
+                )
                 time.sleep(self.poll_interval)
 
-    def _emit_poll_update(self, logins):
+    def _emit_poll_update(self, logins, sessions):
         if not self._poll_callback:
             return
         payload = {
             'logins': logins or [],
+            'sessions': sessions or [],
             'status': {
                 'ok': self.last_poll_ok,
                 'checked_at': self.last_checked_at,
@@ -219,19 +323,57 @@ class DeviceClient:
         self.log('Login rejected and server notified.')
 
     def end_sessions(self):
+        return self._end_sessions()
+
+    def _end_sessions(self, session_id=None):
         """
         Attempts to revoke active sessions via a backend endpoint.
         """
         if not self.is_linked():
             raise DeviceError('Device not linked.')
-        payload = {'email': self.state_data['email']}
+        device_id = self.state_data.get('device_id')
+        if not device_id:
+            raise DeviceError('Device id missing; relink your device to manage sessions.')
+        payload = {'email': self.state_data['email'], 'device_id': device_id}
+        if session_id:
+            payload['session_id'] = session_id
         try:
             resp = requests.post(f'{self.api_base}/api/device/sessions/end', json=payload, timeout=10)
-            if resp.status_code == 404:
-                raise DeviceError('Session revoke endpoint not available yet (TODO on backend).')
             resp.raise_for_status()
+            try:
+                return resp.json()
+            except ValueError:
+                return {}
         except requests.RequestException as exc:
             raise DeviceError(f'Failed to end sessions: {exc}') from exc
+
+    def end_single_session(self, session_id):
+        return self._end_sessions(session_id=session_id)
+
+    def fetch_active_sessions(self, allow_missing_device=False):
+        if not self.is_linked():
+            return []
+        device_id = self.state_data.get('device_id')
+        if not device_id:
+            if allow_missing_device:
+                return []
+            raise DeviceError('Device id missing; relink your device to manage sessions.')
+        try:
+            resp = requests.get(
+                f'{self.api_base}/api/device/sessions',
+                params={'email': self.state_data['email'], 'device_id': device_id},
+                timeout=10
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as exc:
+            raise DeviceError(f'Failed to fetch sessions: {exc}') from exc
+        except ValueError:
+            data = {}
+
+        sessions = data.get('sessions', [])
+        self.active_sessions = sessions
+        return sessions
 
     def clear_pending_login(self, login_id=None):
         if login_id:
@@ -264,18 +406,27 @@ if tk is not None:
 
             self.status_var = tk.StringVar(value='Status: waiting…')
             self.last_checked_var = tk.StringVar(value='Last checked: —')
+            self.unlock_error_var = tk.StringVar(value='')
+            self.unlock_pin_var = tk.StringVar()
             self.login_lookup = {}
+            self.session_lookup = {}
             self.selected_login_id = None
-            self.tree = None
+            self.selected_session_id = None
+            self.pending_tree = None
+            self.sessions_tree = None
             self.status_dot = None
+            self.is_unlocked = False
 
             self._build_layout()
             self.protocol('WM_DELETE_WINDOW', self.on_close)
 
             if self.client.is_linked():
                 self.log(f"Device linked as {self.client.state_data.get('device_name')}")
-                self.render_dashboard()
-                self.start_polling()
+                self.ensure_pin_exists()
+                if self.client.has_pin():
+                    self.render_unlock_screen()
+                else:
+                    self.render_link_form()
             else:
                 self.log('Link your device to begin.')
                 self.render_link_form()
@@ -325,12 +476,16 @@ if tk is not None:
         def clear_content(self):
             for widget in self.content.winfo_children():
                 widget.destroy()
-            self.tree = None
+            self.pending_tree = None
+            self.sessions_tree = None
             self.login_lookup = {}
+            self.session_lookup = {}
             self.selected_login_id = None
+            self.selected_session_id = None
 
         def render_link_form(self):
             self.clear_content()
+            self.is_unlocked = False
             self.set_header_subtitle('Link this device to begin approving sign-ins')
 
             form = ttk.Frame(self.content)
@@ -360,7 +515,96 @@ if tk is not None:
 
             ttk.Button(form, text='Link device', command=self.link_device).grid(row=9, column=0, pady=(20, 0), sticky='ew')
 
+        def ensure_pin_exists(self):
+            if not self.client.is_linked():
+                return
+            if self.client.has_pin():
+                return
+            self.prompt_set_pin(force=True)
+
+        def prompt_set_pin(self, force=False):
+            if tk is None or simpledialog is None:
+                messagebox.showerror('PIN required', 'Unable to set a PIN because Tk dialogs are unavailable.')
+                return False
+            while True:
+                pin = simpledialog.askstring('Set PIN', f'Choose a {PIN_MIN_LENGTH}-{PIN_MAX_LENGTH} digit PIN', show='*', parent=self)
+                if pin is None:
+                    if force and not self.client.has_pin():
+                        messagebox.showwarning('PIN required', 'A PIN is required to protect your device before use.')
+                        continue
+                    return self.client.has_pin()
+                if not self._valid_pin(pin):
+                    messagebox.showerror('Invalid PIN', f'PIN must be {PIN_MIN_LENGTH}-{PIN_MAX_LENGTH} digits.')
+                    continue
+                confirm = simpledialog.askstring('Confirm PIN', 'Re-enter PIN to confirm', show='*', parent=self)
+                if confirm is None:
+                    messagebox.showwarning('PIN not set', 'Confirmation cancelled. Please try again.')
+                    continue
+                if pin != confirm:
+                    messagebox.showerror('Mismatch', 'PIN entries did not match. Try again.')
+                    continue
+                try:
+                    self.client.set_pin(pin)
+                    messagebox.showinfo('PIN set', 'Device PIN created successfully.')
+                except DeviceError as exc:
+                    messagebox.showerror('Unable to set PIN', str(exc))
+                    continue
+                return True
+
+        def _valid_pin(self, pin):
+            cleaned = (pin or '').strip()
+            return cleaned.isdigit() and PIN_MIN_LENGTH <= len(cleaned) <= PIN_MAX_LENGTH
+
+        def render_unlock_screen(self):
+            self.clear_content()
+            if not self.client.is_linked():
+                self.render_link_form()
+                return
+            self.set_header_subtitle('Unlock this device to manage logins')
+            self.unlock_error_var.set('')
+            wrapper = ttk.Frame(self.content)
+            wrapper.grid(row=0, column=0, sticky='nsew')
+            wrapper.columnconfigure(0, weight=1)
+            ttk.Label(wrapper, text='Trustlogin Device App — Unlock', style='Section.TLabel').grid(row=0, column=0, sticky='w')
+            ttk.Label(wrapper, text=f"Linked account: {self.client.state_data.get('email', '—')}").grid(row=1, column=0, sticky='w', pady=(6, 12))
+
+            if not self.client.has_pin():
+                ttk.Label(
+                    wrapper,
+                    text='Create a PIN to secure this device before unlocking.',
+                    wraplength=480
+                ).grid(row=2, column=0, sticky='w')
+                ttk.Button(wrapper, text='Set PIN', command=lambda: self._handle_unlock_set_pin()).grid(row=3, column=0, sticky='w', pady=(10, 0))
+                ttk.Button(wrapper, text='Unlink Device', command=self.unlink_device).grid(row=4, column=0, sticky='w', pady=(6, 0))
+                return
+
+            form = ttk.Frame(wrapper)
+            form.grid(row=2, column=0, sticky='nsew')
+            form.columnconfigure(0, weight=1)
+            ttk.Label(form, text='Enter PIN to unlock:').grid(row=0, column=0, sticky='w')
+            entry = ttk.Entry(form, textvariable=self.unlock_pin_var, show='*')
+            entry.grid(row=1, column=0, sticky='ew', pady=(4, 0))
+            entry.focus_set()
+
+            error_label = ttk.Label(form, textvariable=self.unlock_error_var, foreground='#ef4444')
+            error_label.grid(row=2, column=0, sticky='w', pady=(6, 0))
+
+            actions = ttk.Frame(form)
+            actions.grid(row=3, column=0, sticky='ew', pady=(12, 0))
+            ttk.Button(actions, text='Unlock', command=self.handle_unlock).grid(row=0, column=0, padx=(0, 8))
+            ttk.Button(actions, text='Unlink Device', command=self.unlink_device).grid(row=0, column=1)
+
+        def _handle_unlock_set_pin(self):
+            if self.prompt_set_pin(force=True):
+                self.render_unlock_screen()
+
         def render_dashboard(self):
+            if not self.client.is_linked():
+                self.render_link_form()
+                return
+            if not self.is_unlocked and self.client.has_pin():
+                self.render_unlock_screen()
+                return
             self.clear_content()
             state = self.client.state_data
             self.set_header_subtitle(f"Linked as {state.get('email')} · {state.get('device_name')}")
@@ -370,40 +614,117 @@ if tk is not None:
             dashboard.columnconfigure(0, weight=1)
             dashboard.rowconfigure(2, weight=1)
 
-            ttk.Label(dashboard, text='Pending Logins', style='Section.TLabel').grid(row=0, column=0, sticky='w')
+            ttk.Label(dashboard, text='Trustlogin Security Console', style='Section.TLabel').grid(row=0, column=0, sticky='w')
 
-            toolbar = ttk.Frame(dashboard)
-            toolbar.grid(row=1, column=0, sticky='ew', pady=(8, 4))
-            toolbar.columnconfigure(4, weight=1)
+            top_toolbar = ttk.Frame(dashboard)
+            top_toolbar.grid(row=1, column=0, sticky='ew', pady=(6, 8))
+            top_toolbar.columnconfigure(0, weight=1)
+            ttk.Label(
+                top_toolbar,
+                text='Approve sign-ins and manage logged-in browsers right from your linked device.'
+            ).grid(row=0, column=0, sticky='w')
+            buttons = ttk.Frame(top_toolbar)
+            buttons.grid(row=0, column=1, sticky='e')
+            self.lock_btn = ttk.Button(buttons, text='Lock App', command=self.lock_app)
+            self.lock_btn.grid(row=0, column=0, padx=(0, 6))
+            self.unlink_btn = ttk.Button(buttons, text='Unlink Device', command=self.unlink_device)
+            self.unlink_btn.grid(row=0, column=1)
 
-            self.approve_btn = ttk.Button(toolbar, text='Approve', command=self.handle_approve_selected, state='disabled')
+            notebook = ttk.Notebook(dashboard)
+            notebook.grid(row=2, column=0, sticky='nsew')
+
+            pending_frame = ttk.Frame(notebook, padding=(4, 6))
+            pending_frame.columnconfigure(0, weight=1)
+            pending_frame.rowconfigure(1, weight=1)
+            notebook.add(pending_frame, text='Pending Logins')
+
+            pending_toolbar = ttk.Frame(pending_frame)
+            pending_toolbar.grid(row=0, column=0, sticky='ew', pady=(0, 4))
+            pending_toolbar.columnconfigure(3, weight=1)
+            self.approve_btn = ttk.Button(
+                pending_toolbar, text='Approve', command=self.handle_approve_selected, state='disabled'
+            )
             self.approve_btn.grid(row=0, column=0, padx=(0, 6))
-            self.reject_btn = ttk.Button(toolbar, text='Reject', command=self.handle_reject_selected, state='disabled')
+            self.reject_btn = ttk.Button(
+                pending_toolbar, text='Reject', command=self.handle_reject_selected, state='disabled'
+            )
             self.reject_btn.grid(row=0, column=1, padx=(0, 6))
-            self.end_sessions_btn = ttk.Button(toolbar, text='End Sessions', command=self.handle_end_sessions)
-            self.end_sessions_btn.grid(row=0, column=2, padx=(0, 6))
-            self.logout_btn = ttk.Button(toolbar, text='Logout', command=self.logout_device)
-            self.logout_btn.grid(row=0, column=3)
+            ttk.Label(
+                pending_toolbar,
+                text='Select a login to approve or reject.'
+            ).grid(row=0, column=2, sticky='w')
 
-            table_frame = ttk.Frame(dashboard)
-            table_frame.grid(row=2, column=0, sticky='nsew')
-            table_frame.columnconfigure(0, weight=1)
-            table_frame.rowconfigure(0, weight=1)
+            pending_table = ttk.Frame(pending_frame)
+            pending_table.grid(row=1, column=0, sticky='nsew')
+            pending_table.columnconfigure(0, weight=1)
+            pending_table.rowconfigure(0, weight=1)
 
-            columns = ('login_id', 'email', 'requested')
-            self.tree = ttk.Treeview(table_frame, columns=columns, show='headings', selectmode='browse')
-            self.tree.heading('email', text='Email')
-            self.tree.heading('requested', text='Requested')
-            self.tree.heading('login_id', text='Login ID')
-            self.tree.column('login_id', width=120, anchor='center')
-            self.tree.column('email', width=220, anchor='w')
-            self.tree.column('requested', width=180, anchor='w')
-            self.tree.grid(row=0, column=0, sticky='nsew')
+            pending_columns = ('client', 'ip', 'requested')
+            self.pending_tree = ttk.Treeview(
+                pending_table,
+                columns=pending_columns,
+                show='headings',
+                selectmode='browse'
+            )
+            self.pending_tree.heading('client', text='Browser / Device')
+            self.pending_tree.heading('ip', text='IP Address')
+            self.pending_tree.heading('requested', text='Requested')
+            self.pending_tree.column('client', width=250, anchor='w')
+            self.pending_tree.column('ip', width=140, anchor='center')
+            self.pending_tree.column('requested', width=180, anchor='w')
+            self.pending_tree.grid(row=0, column=0, sticky='nsew')
+            pending_scroll = ttk.Scrollbar(pending_table, orient='vertical', command=self.pending_tree.yview)
+            pending_scroll.grid(row=0, column=1, sticky='ns')
+            self.pending_tree.configure(yscrollcommand=pending_scroll.set)
+            self.pending_tree.bind('<<TreeviewSelect>>', self.on_pending_row_select)
 
-            scrollbar = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree.yview)
-            scrollbar.grid(row=0, column=1, sticky='ns')
-            self.tree.configure(yscrollcommand=scrollbar.set)
-            self.tree.bind('<<TreeviewSelect>>', self.on_row_select)
+            sessions_frame = ttk.Frame(notebook, padding=(4, 6))
+            sessions_frame.columnconfigure(0, weight=1)
+            sessions_frame.rowconfigure(1, weight=1)
+            notebook.add(sessions_frame, text='Active Sessions')
+
+            sessions_toolbar = ttk.Frame(sessions_frame)
+            sessions_toolbar.grid(row=0, column=0, sticky='ew', pady=(0, 4))
+            sessions_toolbar.columnconfigure(2, weight=1)
+            ttk.Label(sessions_toolbar, text='View browsers that are currently signed in.').grid(row=0, column=0, sticky='w')
+            self.refresh_sessions_btn = ttk.Button(
+                sessions_toolbar, text='Refresh', command=self.handle_refresh_sessions
+            )
+            self.refresh_sessions_btn.grid(row=0, column=1, padx=(6, 6))
+            self.logout_session_btn = ttk.Button(
+                sessions_toolbar, text='Logout Session', command=self.handle_logout_session, state='disabled'
+            )
+            self.logout_session_btn.grid(row=0, column=2, padx=(0, 6), sticky='e')
+            self.end_sessions_btn = ttk.Button(
+                sessions_toolbar, text='End All Sessions', command=self.handle_end_sessions
+            )
+            self.end_sessions_btn.grid(row=0, column=3, sticky='e')
+
+            sessions_table = ttk.Frame(sessions_frame)
+            sessions_table.grid(row=1, column=0, sticky='nsew')
+            sessions_table.columnconfigure(0, weight=1)
+            sessions_table.rowconfigure(0, weight=1)
+
+            session_columns = ('client', 'ip', 'created', 'last_seen')
+            self.sessions_tree = ttk.Treeview(
+                sessions_table,
+                columns=session_columns,
+                show='headings',
+                selectmode='browse'
+            )
+            self.sessions_tree.heading('client', text='Browser / Device')
+            self.sessions_tree.heading('ip', text='IP Address')
+            self.sessions_tree.heading('created', text='Logged in at')
+            self.sessions_tree.heading('last_seen', text='Last active')
+            self.sessions_tree.column('client', width=220, anchor='w')
+            self.sessions_tree.column('ip', width=140, anchor='center')
+            self.sessions_tree.column('created', width=180, anchor='w')
+            self.sessions_tree.column('last_seen', width=180, anchor='w')
+            self.sessions_tree.grid(row=0, column=0, sticky='nsew')
+            sessions_scroll = ttk.Scrollbar(sessions_table, orient='vertical', command=self.sessions_tree.yview)
+            sessions_scroll.grid(row=0, column=1, sticky='ns')
+            self.sessions_tree.configure(yscrollcommand=sessions_scroll.set)
+            self.sessions_tree.bind('<<TreeviewSelect>>', self.on_session_row_select)
 
         def link_device(self):
             email = self.email_var.get().strip()
@@ -424,15 +745,56 @@ if tk is not None:
                 messagebox.showerror('Link failed', str(exc))
                 return
 
+            if not self.prompt_set_pin(force=True):
+                messagebox.showerror('PIN required', 'Unable to set a PIN. Device will remain locked.')
+            self.is_unlocked = True
+            self.unlock_pin_var.set('')
+            self.unlock_error_var.set('')
             self.render_dashboard()
             self.start_polling()
 
-        def logout_device(self):
+        def handle_unlock(self):
+            pin = self.unlock_pin_var.get().strip()
+            if not pin:
+                self.unlock_error_var.set('Enter your PIN to continue.')
+                return
+            if not self.client.verify_pin(pin):
+                self.unlock_error_var.set('Incorrect PIN. Please try again.')
+                self.unlock_pin_var.set('')
+                return
+            self.unlock_pin_var.set('')
+            self.unlock_error_var.set('')
+            self.is_unlocked = True
+            self.render_dashboard()
+            self.start_polling()
+
+        def lock_app(self):
+            if not self.client.is_linked():
+                return
+            self.stop_polling()
+            self.is_unlocked = False
+            self.unlock_pin_var.set('')
+            self.unlock_error_var.set('')
+            self.render_unlock_screen()
+
+        def unlink_device(self):
+            if not self.client.is_linked():
+                self.render_link_form()
+                return
+            confirm = messagebox.askyesno(
+                'Unlink Device',
+                'Are you sure you want to unlink this device? You will need a new link code to re-enrol.'
+            )
+            if not confirm:
+                return
             self.client.relink()
             self.login_lookup.clear()
             self.selected_login_id = None
             self.stop_polling()
-            self.log('Device logged out locally.')
+            self.is_unlocked = False
+            self.unlock_pin_var.set('')
+            self.unlock_error_var.set('')
+            self.log('Device unlinked. Link again to approve logins.')
             self.render_link_form()
 
         def start_polling(self):
@@ -449,13 +811,16 @@ if tk is not None:
 
         def _process_poll_payload(self, payload):
             logins = payload.get('logins', [])
+            sessions = payload.get('sessions', [])
             status = payload.get('status', {})
-            if self.tree:
+            if self.pending_tree:
                 self.refresh_login_table(logins)
+            if self.sessions_tree:
+                self.refresh_sessions_table(sessions)
             self.update_status_bar(status)
 
         def refresh_login_table(self, logins):
-            current_ids = set(self.tree.get_children())
+            current_ids = set(self.pending_tree.get_children())
             incoming_ids = set()
             self.login_lookup = {}
 
@@ -464,22 +829,50 @@ if tk is not None:
                 incoming_ids.add(login_id)
                 self.login_lookup[login_id] = login
                 values = (
-                    login_id,
-                    self.client.state_data.get('email', '—'),
+                    client_label_from_metadata(login),
+                    login.get('ip_address') or '—',
                     login.get('created_at', '—')
                 )
                 if login_id in current_ids:
-                    self.tree.item(login_id, values=values)
+                    self.pending_tree.item(login_id, values=values)
                 else:
-                    self.tree.insert('', 'end', iid=login_id, values=values)
+                    self.pending_tree.insert('', 'end', iid=login_id, values=values)
 
             for missing in current_ids - incoming_ids:
-                self.tree.delete(missing)
+                self.pending_tree.delete(missing)
 
             if self.selected_login_id and self.selected_login_id not in incoming_ids:
                 self.selected_login_id = None
-                self.tree.selection_remove(self.tree.selection())
-            self.update_buttons_state()
+                self.pending_tree.selection_remove(self.pending_tree.selection())
+            self.update_login_buttons()
+
+        def refresh_sessions_table(self, sessions):
+            current_ids = set(self.sessions_tree.get_children())
+            incoming_ids = set()
+            self.session_lookup = {}
+
+            for session in sessions:
+                session_id = session['session_id']
+                incoming_ids.add(session_id)
+                self.session_lookup[session_id] = session
+                values = (
+                    client_label_from_metadata(session),
+                    session.get('ip_address') or '—',
+                    session.get('created_at', '—'),
+                    session.get('last_seen_at', '—')
+                )
+                if session_id in current_ids:
+                    self.sessions_tree.item(session_id, values=values)
+                else:
+                    self.sessions_tree.insert('', 'end', iid=session_id, values=values)
+
+            for missing in current_ids - incoming_ids:
+                self.sessions_tree.delete(missing)
+
+            if self.selected_session_id and self.selected_session_id not in incoming_ids:
+                self.selected_session_id = None
+                self.sessions_tree.selection_remove(self.sessions_tree.selection())
+            self.update_session_buttons()
 
         def update_status_bar(self, status):
             ok = status.get('ok')
@@ -505,22 +898,37 @@ if tk is not None:
             if self.status_dot:
                 self.status_dot.configure(background=color)
 
-        def on_row_select(self, _event):
-            selection = self.tree.selection()
+        def on_pending_row_select(self, _event):
+            selection = self.pending_tree.selection()
             self.selected_login_id = selection[0] if selection else None
-            self.update_buttons_state()
+            self.update_login_buttons()
 
-        def update_buttons_state(self):
+        def on_session_row_select(self, _event):
+            selection = self.sessions_tree.selection()
+            self.selected_session_id = selection[0] if selection else None
+            self.update_session_buttons()
+
+        def update_login_buttons(self):
             state = 'normal' if self.selected_login_id else 'disabled'
             if self.approve_btn:
                 self.approve_btn.configure(state=state)
             if self.reject_btn:
                 self.reject_btn.configure(state=state)
 
+        def update_session_buttons(self):
+            state = 'normal' if self.selected_session_id else 'disabled'
+            if self.logout_session_btn:
+                self.logout_session_btn.configure(state=state)
+
         def get_selected_login(self):
             if not self.selected_login_id:
                 return None
             return self.login_lookup.get(self.selected_login_id)
+
+        def get_selected_session(self):
+            if not self.selected_session_id:
+                return None
+            return self.session_lookup.get(self.selected_session_id)
 
         def handle_approve_selected(self):
             login = self.get_selected_login()
@@ -543,11 +951,40 @@ if tk is not None:
 
         def handle_end_sessions(self):
             try:
-                self.client.end_sessions()
+                result = self.client.end_sessions()
             except DeviceError as exc:
                 messagebox.showerror('Unable to end sessions', str(exc))
                 return
-            messagebox.showinfo('Sessions ended', 'Requested the server to end active sessions.')
+            ended = result.get('ended_sessions') if isinstance(result, dict) else None
+            summary = f'Revoked {ended} session(s).' if ended is not None else 'Requested the server to end active sessions.'
+            messagebox.showinfo('Sessions ended', summary)
+            self.handle_refresh_sessions()
+
+        def handle_refresh_sessions(self):
+            threading.Thread(target=self._refresh_sessions_thread, daemon=True).start()
+
+        def _refresh_sessions_thread(self):
+            try:
+                sessions = self.client.fetch_active_sessions()
+            except DeviceError as exc:
+                self.after(0, lambda: messagebox.showerror('Unable to refresh sessions', str(exc)))
+                return
+            self.after(0, lambda: self.refresh_sessions_table(sessions))
+
+        def handle_logout_session(self):
+            session = self.get_selected_session()
+            if not session:
+                messagebox.showinfo('No selection', 'Select an active session to log out.')
+                return
+            label = client_label_from_metadata(session)
+            try:
+                self.client.end_single_session(session['session_id'])
+            except DeviceError as exc:
+                messagebox.showerror('Unable to logout session', str(exc))
+                return
+            self.log(f'Logged out session {session["session_id"]} ({label}).')
+            self.selected_session_id = None
+            self.handle_refresh_sessions()
 
         def log(self, message):
             entry = f'[{time.strftime("%H:%M:%S")}] {message}\n'
@@ -581,6 +1018,9 @@ class DeviceCLI:
         else:
             self.log(f"Device linked as {self.client.state_data.get('device_name')}")
 
+        if self.client.is_linked() and not self.unlock_with_pin():
+            return
+
         try:
             self.client.start_polling(self.enqueue_login)
         except DeviceError as exc:
@@ -599,6 +1039,65 @@ class DeviceCLI:
             self.log('Stopping…')
         finally:
             self.client.stop_polling()
+
+    def run_session_manager(self):
+        self.log('Trustlogin Device CLI · Session Manager')
+        if not self.client.is_linked():
+            self.log('No linked device found. Follow the prompts to link this terminal.')
+            try:
+                self.prompt_link()
+            except SystemExit:
+                return
+        if self.client.is_linked() and not self.unlock_with_pin():
+            return
+        while True:
+            try:
+                sessions = self.client.fetch_active_sessions()
+            except DeviceError as exc:
+                self.log(f'Unable to load sessions: {exc}')
+                return
+
+            if not sessions:
+                self.log('No active sessions for this account.')
+            else:
+                self.log('Active sessions:')
+                for idx, session in enumerate(sessions, start=1):
+                    label = client_label_from_metadata(session)
+                    created = session.get('created_at', '—')
+                    last_seen = session.get('last_seen_at', '—')
+                    ip = session.get('ip_address') or '—'
+                    print(f'  [{idx}] {label} · IP {ip} · started {created} · last seen {last_seen}')
+
+            choice = input(
+                "Select a session number to revoke, 'a' to revoke all sessions, or press Enter to exit: "
+            ).strip()
+            if not choice:
+                break
+            if choice.lower() == 'a':
+                try:
+                    result = self.client.end_sessions()
+                    ended = result.get('ended_sessions') if isinstance(result, dict) else None
+                    note = f"Revoked {ended} session(s)." if ended is not None else 'Requested session revoke.'
+                    self.log(note)
+                except DeviceError as exc:
+                    self.log(f'Unable to revoke sessions: {exc}')
+                continue
+
+            if not choice.isdigit():
+                self.log('Enter a valid number.')
+                continue
+            idx = int(choice)
+            if idx < 1 or idx > len(sessions):
+                self.log('Number out of range.')
+                continue
+
+            session = sessions[idx - 1]
+            label = client_label_from_metadata(session)
+            try:
+                self.client.end_single_session(session['session_id'])
+                self.log(f'Revoked {label} session.')
+            except DeviceError as exc:
+                self.log(f'Unable to revoke session: {exc}')
 
     def prompt_link(self):
         while True:
@@ -624,6 +1123,7 @@ class DeviceCLI:
                     raise SystemExit(1)
 
         self.log(f"Device linked as {self.client.state_data.get('device_name')}")
+        self.prompt_pin_setup(force=True)
 
     def enqueue_login(self, payload):
         status = payload.get('status', {})
@@ -640,7 +1140,10 @@ class DeviceCLI:
     def prompt_login_decision(self, login):
         email = self.client.state_data.get('email')
         created_at = login.get('created_at', 'unknown time')
-        self.log(f'Login request for {email} @ {created_at}')
+        label = client_label_from_metadata(login)
+        self.log(f'Login request from {label} for {email} @ {created_at}')
+        if login.get('ip_address'):
+            self.log(f"Origin IP: {login['ip_address']}")
         while True:
             choice = input('Approve login? [y/N]: ').strip().lower()
             if choice in ('y', 'yes'):
@@ -661,15 +1164,58 @@ class DeviceCLI:
                 break
             print('Please respond with y or n.')
 
+    def prompt_pin_setup(self, force=False):
+        while True:
+            pin = getpass(f'Set a {PIN_MIN_LENGTH}-{PIN_MAX_LENGTH} digit PIN: ').strip()
+            if not pin:
+                if force:
+                    self.log('PIN is required to protect this device.')
+                    continue
+                return
+            if not pin.isdigit() or not (PIN_MIN_LENGTH <= len(pin) <= PIN_MAX_LENGTH):
+                self.log(f'PIN must be {PIN_MIN_LENGTH}-{PIN_MAX_LENGTH} digits.')
+                continue
+            confirm = getpass('Confirm PIN: ').strip()
+            if pin != confirm:
+                self.log('PIN entries did not match.')
+                continue
+            try:
+                self.client.set_pin(pin)
+                self.log('PIN saved.')
+                return
+            except DeviceError as exc:
+                self.log(f'Unable to set PIN: {exc}')
+
+    def unlock_with_pin(self):
+        if not self.client.is_linked():
+            return False
+        if not self.client.has_pin():
+            self.prompt_pin_setup(force=True)
+        attempts = 3
+        while attempts > 0:
+            pin = getpass('Enter device PIN to unlock: ').strip()
+            if self.client.verify_pin(pin):
+                self.log('Device unlocked.')
+                return True
+            attempts -= 1
+            self.log('Incorrect PIN.')
+        self.log('Too many incorrect PIN attempts. Exiting.')
+        return False
+
 
 def main():
     parser = argparse.ArgumentParser(description='Trustlogin device app')
     parser.add_argument('--cli', action='store_true', help='Run in terminal mode instead of the Tk GUI.')
+    parser.add_argument('--sessions', action='store_true', help='In CLI mode, manage active sessions.')
     parser.add_argument('--poll-interval', type=int, default=POLL_INTERVAL, help='Seconds between poll requests.')
     args = parser.parse_args()
 
     if args.cli:
-        DeviceCLI(poll_interval=args.poll_interval).run()
+        cli = DeviceCLI(poll_interval=args.poll_interval)
+        if args.sessions:
+            cli.run_session_manager()
+        else:
+            cli.run()
         return
 
     if tk is None:

@@ -119,3 +119,24 @@ function db_update_login_status(int $id, array $data): array
 {
     return db_update_login($id, $data);
 }
+
+function db_create_session(array $data): array
+{
+    return db_request('POST', 'sessions', $data);
+}
+
+function db_get_sessions(array $params): array
+{
+    return db_request('GET', 'sessions', null, $params);
+}
+
+function db_find_session_by_session_id(string $sessionId): ?array
+{
+    $sessions = db_request('GET', 'sessions', null, ['session_id' => $sessionId]);
+    return $sessions[0] ?? null;
+}
+
+function db_update_session(int $id, array $data): array
+{
+    return db_request('PATCH', "sessions/$id", $data);
+}
